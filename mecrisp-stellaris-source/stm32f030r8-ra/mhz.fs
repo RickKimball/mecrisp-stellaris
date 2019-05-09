@@ -48,19 +48,21 @@ $40004400 constant USART2
   %11 RCC_CFGR bic!                    \ switch to HSI
   8000000 115200 / USART2_BRR !
   %1 24 lshift RCC_CR bic!             \ disable PLLON
+  0 FLASH_ACR !                        \ disable prefetch and ws
   ;
 
 \ Set the main clock to 16/24/48 MHz, keep baud rate at 115200
 \ nucleo-f030r8 has an external clock we can use with HSEBYP
 : MHz ( n -- )
   hsi_en                          \ switch back to hsi to make changes
+
   dup case
-  16 of %10000 FLASH_ACR ! endof  \ Zero flash wait states, PRFTBE enabled
-  24 of %10000 FLASH_ACR ! endof  \ Zero flash wait states, PRFTBE enabled
-  48 of %10001 FLASH_ACR ! endof  \ One flash wait state, PRFTBE enabled
-  \ all other
-    %10000 FLASH_ACR !            \ Zero wait state if invalid
-  endcase
+    16 of %10000 endof  \ Zero flash wait states, PRFTBE enabled
+    24 of %10000 endof  \ Zero flash wait states, PRFTBE enabled
+    48 of %10001 endof  \ One flash wait state, PRFTBE enabled
+    \ all other
+          %10000        \ Zero wait state if invalid
+  endcase FLASH_ACR !
   
   %1 18 lshift RCC_CR bis!              \ set RCC_CR_HSEBYP
   %1 16 lshift RCC_CR bis!              \ set RCC_CR_HSEON
@@ -69,9 +71,10 @@ $40004400 constant USART2
   %1    16 lshift RCC_CFGR bis! \ set RCC_CFGR_PLLSRC_HSE_PREDIV DIV/1
   %1111 18 lshift RCC_CFGR bic! \ clr RCC_CFGR_PLLMUL
   dup case
-  16 of ( bic! set it to mul 2  )     endof \ PLL factor: 8 * 2 = 16 MHz
-  24 of %0001 18 lshift RCC_CFGR bis! endof \ PLL factor: 8 * 3 = 24 MHz
-  48 of %0100 18 lshift RCC_CFGR bis! endof \ PLL factor: 8 * 6 = 48 MHz
+    16 of ( bic! set it to mul 2  )     endof \ PLL factor: 8 * 2 = 16 MHz
+    24 of %0001 18 lshift RCC_CFGR bis! endof \ PLL factor: 8 * 3 = 24 MHz
+    48 of %0100 18 lshift RCC_CFGR bis! endof \ PLL factor: 8 * 6 = 48 MHz
+    \ all other
   endcase
 
   %1111 4 lshift RCC_CFGR bic!  \ HPRE DIV 1, HCLK = SYSCLK
@@ -83,13 +86,13 @@ $40004400 constant USART2
   %10 RCC_CFGR bis!   \ Set RCC_CFGR_SW for PLL is system clock
 
   ( pop the stack value ) case
-  16 of 138 USART2_BRR ! endof    \ Set console baud rate to 12000000/115200
-  24 of 208 USART2_BRR ! endof    \ Set console baud rate to 24000000/115200
-  48 of 416 USART2_BRR ! endof    \ Set console baud rate to 48000000/115200
+    16 of 138 USART2_BRR ! endof    \ Set console baud rate to 16000000/115200
+    24 of 208 USART2_BRR ! endof    \ Set console baud rate to 24000000/115200
+    48 of 416 USART2_BRR ! endof    \ Set console baud rate to 48000000/115200
   \ all other
-    138 USART2_BRR ! cr
-    ." Error! Invalid MCLK defaulting to 16 MHz" cr
-    ." 16/24/48 are valid"
+          138 USART2_BRR ! cr
+          ." Error: Invalid MCLK! defaulting to 16 MHz" cr
+          ." [ 16 | 24 | 48 ] are valid options" cr
   endcase
   ;
 
