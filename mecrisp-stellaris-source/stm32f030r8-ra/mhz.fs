@@ -34,27 +34,46 @@ $48000000 constant GPIOA
 $40004400 constant USART2
   USART2 $C + constant USART2_BRR
 
+: +console_speed ( n -- )  115200 / USART2_BRR !  ;   \ expecting SYSCLK speed
+: flash_prefetch? ( -- )  %1 5 lshift FLASH_ACR bit@ ;
+: +flash_ws0 0 FLASH_ACR ! ;
+
 \ MCO SYSCLK out on PA8
-: mco_en ( -- )
+: +mco ( -- )
   %1111 24 lshift RCC_CFGR bic!     \ turn off MCO output
   %0100 24 lshift RCC_CFGR bis!     \ SYSCLK output
   %10 16 lshift GPIOA_MODER bis!    \ PA8 Alternate Function 0 0b10
   %11 16 lshift GPIOA_OSPEEDR bis!  \ PA8 Fast 
   ;
+: -pll_clk %1 24 lshift RCC_CR bic! ;
+: rcc-hsirdy? %1 1 lshift RCC_CR bit@ ;
+: rcc-cfgr-sws? %11 2 lshift RCC_CFGR bit@ ;
+: +rcc-hsion %1 RCC_CR bis! ; \ enable HSION
+: +rcc-swshsi ( -- )
+   %11 RCC_CFGR bic!          \ switch to HSI 
+   begin rcc-cfgr-sws? while repeat
+   ;
 
-: hsi_en
-  %1 RCC_CR bis!                       \ enable HSION
-  begin %1 1 lshift RCC_CR bit@ until  \ wait for HSIRDY
-  %11 RCC_CFGR bic!                    \ switch to HSI
-  8000000 115200 / USART2_BRR !
-  %1 24 lshift RCC_CR bic!             \ disable PLLON
-  0 FLASH_ACR !                        \ disable prefetch and ws
+: +hseon ( -- )
+  %1 18 lshift RCC_CR bis!              \ set RCC_CR_HSEBYP
+  %1 16 lshift RCC_CR bis!              \ set RCC_CR_HSEON
+  begin %1 17 lshift RCC_CR bit@ until  \ wait for HSEON
+;
+
+\ --------------------------------------------------------------------------
+: +hsi_clk ( -- )
+  +rcc-hsion
+  begin rcc-hsirdy? until   \ wait for HSIRDY
+  8000000 +console_speed
+  +rcc-swshsi
+  -pll_clk                  \ disable PLLON
+  +flash_ws0
   ;
 
 \ Set the main clock to 16/24/48 MHz, keep baud rate at 115200
 \ nucleo-f030r8 has an external clock we can use with HSEBYP
 : MHz ( n -- )
-  hsi_en                          \ switch back to hsi to make changes
+  +hsi_clk                          \ switch back to hsi to make changes
 
   dup case
     16 of %10000 endof  \ Zero flash wait states, PRFTBE enabled
@@ -64,12 +83,15 @@ $40004400 constant USART2
           %10000        \ Zero wait state if invalid
   endcase FLASH_ACR !
   
-  %1 18 lshift RCC_CR bis!              \ set RCC_CR_HSEBYP
-  %1 16 lshift RCC_CR bis!              \ set RCC_CR_HSEON
-  begin %1 17 lshift RCC_CR bit@ until  \ wait for HSEON
+  +hseon
+
+  \ %1 18 lshift RCC_CR bis!              \ set RCC_CR_HSEBYP
+  \ %1 16 lshift RCC_CR bis!              \ set RCC_CR_HSEON
+  \ begin %1 17 lshift RCC_CR bit@ until  \ wait for HSEON
 
   %1    16 lshift RCC_CFGR bis! \ set RCC_CFGR_PLLSRC_HSE_PREDIV DIV/1
   %1111 18 lshift RCC_CFGR bic! \ clr RCC_CFGR_PLLMUL
+
   dup case
     16 of ( bic! set it to mul 2  )     endof \ PLL factor: 8 * 2 = 16 MHz
     24 of %0001 18 lshift RCC_CFGR bis! endof \ PLL factor: 8 * 3 = 24 MHz
@@ -83,7 +105,8 @@ $40004400 constant USART2
   %1 24 lshift RCC_CR bis!                \ set PLLON
   begin %1 25 lshift RCC_CR bit@ until    \ wait for PLLRDY
 
-  %10 RCC_CFGR bis!   \ Set RCC_CFGR_SW for PLL is system clock
+  %10 0 lshift RCC_CFGR bis!         \ Set RCC_CFGR_SW for PLL is system clock
+  100 0 do loop
 
   ( pop the stack value ) case
     16 of 138 USART2_BRR ! endof    \ Set console baud rate to 16000000/115200
@@ -96,4 +119,13 @@ $40004400 constant USART2
   endcase
   ;
 
-\ end mhz.fs functions: mco_en, hsi_en, [16|24|48] MHz
+: 8MHz-hsi ( -- ) +hsi_clk 8000000 +console_speed ;
+: 16MHz-hsebyp ( -- ) 16 MHz ;
+: 24MHz-hsebyp ( -- ) 24 MHz ;
+: 48MHz-hsebyp ( -- ) 48 MHz ;
+
+: MHZ ( -- ) ( hide previous version ) ;
+
++mco
+
+\ end mhz.fs functions: +mco, +hsi_clk, [16|24|48] MHz
