@@ -49,6 +49,12 @@ $40004400 constant USART2
   begin %1 17 lshift RCC_CR bit@ until  \ wait for HSEON
   ;
 
+\ disable RCC_CR_HSEON, RCC_CR_HSEBYP
+: -rcc-hseon ( -- )
+  %1 16 lshift RCC_CR bic!
+  %1 18 lshift RCC_CR bic!
+  ;
+
 \ disable pll_clk
 : -pll_clk %1 24 lshift RCC_CR bic! ;
 
@@ -73,11 +79,14 @@ $40004400 constant USART2
   rcc-cfgr-sws %10 = 
   ;
 
-\ enable RCC_HSION
+\ enable RCC_CR_HSION
 : +rcc-hsion ( -- )
   %1 RCC_CR bis!
   begin rcc-hsirdy? until   \ wait for HSIRDY
   ;
+
+\ disable RCC_CR_HSION
+: -rcc-hsion ( -- )   %1 RCC_CR bic! ;
 
 \ change rcc_cfgr source to hsi
 : +rcc-cfgr-sws-hsi ( -- )
@@ -88,10 +97,10 @@ $40004400 constant USART2
 \ switch sysclk to run from the high speed internal 8MHz clock
 : +sysclk-hsi ( -- )
   +rcc-hsion
-  \ begin rcc-hsirdy? until   \ wait for HSIRDY
   8000000 +console_speed
   +rcc-cfgr-sws-hsi
   -pll_clk                  \ disable PLLON
+  -rcc-hseon
   +flash_ws0
   ;
 
@@ -116,9 +125,9 @@ $40004400 constant USART2
 
   \ set pll multiplier
   ( pop ) case
-    16 of ( bic! set it to mul 2  )     endof \ 8 * 2 = 16 MHz
-    24 of %0001 18 lshift RCC_CFGR bis! endof \ 8 * 3 = 24 MHz
-    48 of %0100 18 lshift RCC_CFGR bis! endof \ 8 * 6 = 48 MHz
+  \ 16 of ( clearing it set it to 2 )    endof \ 8 * 2 = 16 MHz  
+    24 of %0001 18 lshift  RCC_CFGR bis! endof \ 8 * 3 = 24 MHz
+    48 of %0100 18 lshift  RCC_CFGR bis! endof \ 8 * 6 = 48 MHz
     \ all other
   endcase
 
@@ -132,19 +141,23 @@ $40004400 constant USART2
   begin rcc-cfgr-sws-pll? until           \ wait for the sysclk to switch to pll
   ;
 
+\ 8mhz using high speed internal xtal
 : 8MHz-hsi      ( -- ) +sysclk-hsi ;
 
+\ 8mhz using high speed external from stlink
 : 8MHz-hsebyp  ( -- ) +sysclk-hsi +hseon +sysclk-hse ;
 
+\ 16mhz using high speed external from stlink and pll
 : 16MHz-hsebyp  ( -- )
   +sysclk-hsi +flash_ws0_prefetch +hseon 16 +sysclk-pll 16000000 +console_speed
   ;
 
+\ 24mhz using high speed external from stlink and pll
 : 24MHz-hsebyp  ( -- )
   +sysclk-hsi +flash_ws0_prefetch +hseon 24 +sysclk-pll 24000000 +console_speed
   ;
 
-  ;
+\ 48Mhz using high speed external from stlink and pll
 : 48MHz-hsebyp  ( -- )
   +sysclk-hsi +flash_ws1_prefetch +hseon 48 +sysclk-pll 48000000 +console_speed
   ;
